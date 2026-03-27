@@ -1,0 +1,129 @@
+@using Library.UI.Models
+@using MudBlazor
+@inject ApiClient Api
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.h6" Class="mb-4">
+            @(model.Id == 0 ? "Add Member" : "Edit Member")
+        </MudText>
+
+        @if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">
+                @errorMessage
+            </MudAlert>
+        }
+
+        <MudTextField Label="Code"
+                      @bind-Value="model.Code"
+                      Required="true"
+                      Disabled="isSaving"
+                      Class="mb-2" />
+
+        <MudTextField Label="Full Name"
+                      @bind-Value="model.FullName"
+                      Required="true"
+                      Disabled="isSaving"
+                      Class="mb-2" />
+
+        <MudTextField Label="Email"
+                      @bind-Value="model.Email"
+                      Disabled="isSaving"
+                      Class="mb-2" />
+
+        <MudTextField Label="Phone"
+                      @bind-Value="model.Phone"
+                      Disabled="isSaving"
+                      Class="mb-2" />
+
+        <MudTextField Label="Address"
+                      Lines="3"
+                      @bind-Value="model.Address"
+                      Disabled="isSaving"
+                      Class="mb-2" />
+
+        <MudSwitch T="bool"
+                   Label="Active"
+                   @bind-Value="model.IsActive"
+                   Disabled="isSaving"
+                   Class="mb-2" />
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel" Variant="Variant.Outlined" Disabled="isSaving">Cancel</MudButton>
+        <MudButton OnClick="SaveAsync" Color="Color.Primary" Disabled="isSaving">
+            @if (isSaving)
+            {
+                <MudProgressCircular Class="me-2" Size="Size.Small" Indeterminate="true" />
+            }
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialogInstance { get; set; } = default!;
+    [Parameter] public MemberVm? Model { get; set; }
+
+    private MemberVm model = new();
+    private bool isSaving;
+    private string? errorMessage;
+
+    protected override void OnInitialized()
+    {
+        model = Model is null
+            ? new MemberVm { IsActive = true }
+            : new MemberVm
+            {
+                Id = Model.Id,
+                Code = Model.Code,
+                FullName = Model.FullName,
+                Email = Model.Email,
+                Phone = Model.Phone,
+                Address = Model.Address,
+                IsActive = Model.IsActive,
+                CreatedAt = Model.CreatedAt
+            };
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            isSaving = true;
+            errorMessage = null;
+
+            if (string.IsNullOrWhiteSpace(model.Code))
+            {
+                errorMessage = "Code is required.";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(model.FullName))
+            {
+                errorMessage = "Full name is required.";
+                return;
+            }
+
+            var saved = await Api.UpsertAsync("members", model);
+            if (saved is null)
+            {
+                errorMessage = "Failed to save member.";
+                return;
+            }
+
+            MudDialogInstance.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void Cancel() => MudDialogInstance.Cancel();
+}

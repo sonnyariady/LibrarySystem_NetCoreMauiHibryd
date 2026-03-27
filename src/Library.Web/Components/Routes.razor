@@ -1,0 +1,16 @@
+@using Microsoft.AspNetCore.Components.Routing
+@using MudBlazor
+@using Library.UI.Pages
+@using Library.UI.Layout
+
+<Router AppAssembly="@typeof(Home).Assembly">
+    <Found Context="ctx">
+        <RouteView RouteData="@ctx" DefaultLayout="@typeof(MainLayout)" />
+        <FocusOnNavigate RouteData="@ctx" Selector="h1" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <MudText Typo="Typo.h6">Page not found.</MudText>
+        </LayoutView>
+    </NotFound>
+</Router>

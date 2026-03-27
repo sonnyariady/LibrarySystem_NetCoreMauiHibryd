@@ -1,0 +1,240 @@
+@using Library.UI.Models
+@using MudBlazor
+@inject ApiClient Api
+
+<MudDialog>
+    <DialogContent>
+        @if (isLoadingMasters)
+        {
+            <div class="d-flex flex-column align-center justify-center pa-6">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                <MudText Class="mt-3">Loading master data...</MudText>
+            </div>
+        }
+        else
+        {
+            <MudText Typo="Typo.h6" Class="mb-4">
+                @(model.Id == 0 ? "Add Loan" : "Edit Loan")
+            </MudText>
+
+            @if (!string.IsNullOrWhiteSpace(errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">
+                    @errorMessage
+                </MudAlert>
+            }
+
+            <MudSelect T="int?"
+                       Label="Book"
+                       @bind-Value="selectedBookId"
+                       Disabled="isSaving"
+                       Class="mb-2">
+                <MudSelectItem T="int?" Value="@((int?)null)">-- Select Book --</MudSelectItem>
+                @foreach (var book in books)
+                {
+                    <MudSelectItem T="int?" Value="@((int?)book.Id)">@book.Title</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect T="int?"
+                       Label="Member"
+                       @bind-Value="selectedMemberId"
+                       Disabled="isSaving"
+                       Class="mb-2">
+                <MudSelectItem T="int?" Value="@((int?)null)">-- Select Member --</MudSelectItem>
+                @foreach (var member in members)
+                {
+                    <MudSelectItem T="int?" Value="@((int?)member.Id)">@member.FullName</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudDatePicker Label="Loan Date"
+                           Date="@loanDate"
+                           DateChanged="OnLoanDateChanged"
+                           Disabled="isSaving"
+                           Class="mb-2" />
+
+            <MudDatePicker Label="Due Date"
+                           Date="@dueDate"
+                           DateChanged="OnDueDateChanged"
+                           Disabled="isSaving"
+                           Class="mb-2" />
+
+            <MudDatePicker Label="Return Date"
+                           Date="@returnDate"
+                           DateChanged="OnReturnDateChanged"
+                           Disabled="isSaving"
+                           Clearable="true"
+                           Class="mb-2" />
+
+            <MudSelect T="string"
+                       Label="Status"
+                       @bind-Value="model.Status"
+                       Disabled="isSaving"
+                       Class="mb-2">
+                <MudSelectItem T="string" Value="@("Borrowed")">Borrowed</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Returned")">Returned</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Overdue")">Overdue</MudSelectItem>
+            </MudSelect>
+
+            <MudTextField Label="Notes"
+                          Lines="3"
+                          @bind-Value="model.Notes"
+                          Disabled="isSaving"
+                          Class="mb-2" />
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel" Variant="Variant.Outlined" Disabled="isSaving">Cancel</MudButton>
+        <MudButton OnClick="SaveAsync" Color="Color.Primary" Disabled="isSaving || isLoadingMasters">
+            @if (isSaving)
+            {
+                <MudProgressCircular Class="me-2" Size="Size.Small" Indeterminate="true" />
+            }
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialogInstance { get; set; } = default!;
+    [Parameter] public LoanVm? Model { get; set; }
+
+    private LoanVm model = new();
+    private List<BookDto> books = new();
+    private List<MemberVm> members = new();
+    private int? selectedBookId;
+    private int? selectedMemberId;
+    private DateTime? loanDate;
+    private DateTime? dueDate;
+    private DateTime? returnDate;
+    private bool isLoadingMasters;
+    private bool isSaving;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        model = Model is null
+            ? new LoanVm
+            {
+                LoanDate = DateTime.Today,
+                DueDate = DateTime.Today.AddDays(7),
+                Status = "Borrowed"
+            }
+            : new LoanVm
+            {
+                Id = Model.Id,
+                BookId = Model.BookId,
+                MemberId = Model.MemberId,
+                LoanDate = Model.LoanDate,
+                DueDate = Model.DueDate,
+                ReturnDate = Model.ReturnDate,
+                Status = string.IsNullOrWhiteSpace(Model.Status) ? "Borrowed" : Model.Status,
+                Notes = Model.Notes
+            };
+
+        loanDate = model.LoanDate == default ? DateTime.Today : model.LoanDate.Date;
+        dueDate = model.DueDate == default ? DateTime.Today.AddDays(7) : model.DueDate.Date;
+        returnDate = model.ReturnDate?.Date;
+
+        await LoadMastersAsync();
+
+        selectedBookId = model.BookId == 0 ? null : model.BookId;
+        selectedMemberId = model.MemberId == 0 ? null : model.MemberId;
+    }
+
+    private async Task LoadMastersAsync()
+    {
+        try
+        {
+            isLoadingMasters = true;
+            errorMessage = null;
+
+            var bookResult = await Api.SearchAsync<BookDto>("books", page: 1, pageSize: 500, sortBy: "Title");
+            var memberResult = await Api.SearchAsync<MemberVm>("members", page: 1, pageSize: 500, sortBy: "FullName");
+
+            books = bookResult.Items.ToList();
+            members = memberResult.Items.ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoadingMasters = false;
+        }
+    }
+
+    private Task OnLoanDateChanged(DateTime? value)
+    {
+        loanDate = value;
+        return Task.CompletedTask;
+    }
+
+    private Task OnDueDateChanged(DateTime? value)
+    {
+        dueDate = value;
+        return Task.CompletedTask;
+    }
+
+    private Task OnReturnDateChanged(DateTime? value)
+    {
+        returnDate = value;
+        return Task.CompletedTask;
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            isSaving = true;
+            errorMessage = null;
+
+            model.BookId = selectedBookId ?? 0;
+            model.MemberId = selectedMemberId ?? 0;
+            model.LoanDate = (loanDate ?? DateTime.Today).Date;
+            model.DueDate = (dueDate ?? DateTime.Today.AddDays(7)).Date;
+            model.ReturnDate = returnDate?.Date;
+            model.Status = string.IsNullOrWhiteSpace(model.Status) ? "Borrowed" : model.Status;
+
+            if (model.BookId == 0)
+            {
+                errorMessage = "Please select a book.";
+                return;
+            }
+
+            if (model.MemberId == 0)
+            {
+                errorMessage = "Please select a member.";
+                return;
+            }
+
+            if (model.DueDate < model.LoanDate)
+            {
+                errorMessage = "Due date cannot be earlier than loan date.";
+                return;
+            }
+
+            var saved = await Api.UpsertAsync("loans", model);
+            if (saved is null)
+            {
+                errorMessage = "Failed to save loan.";
+                return;
+            }
+
+            MudDialogInstance.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void Cancel() => MudDialogInstance.Cancel();
+}

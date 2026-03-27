@@ -1,0 +1,268 @@
+@page "/loans"
+@using Library.UI.Models
+@using Microsoft.JSInterop
+@implements IDisposable
+@inject ApiClient Api
+@inject IJSRuntime JS
+@inject MudBlazor.IDialogService DialogService
+
+<MudText Typo="Typo.h4" Class="mb-3">Loans</MudText>
+
+@if (isLoading || isExporting || isLoadingMasters)
+{
+    <MudOverlay Visible="true" DarkBackground="true" AutoClose="false" ZIndex="2000">
+        <MudPaper Class="pa-6 d-flex flex-column align-center justify-center">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+            <MudText Class="mt-3">
+                @(isExporting ? "Exporting Excel..." : isLoadingMasters ? "Loading master data..." : "Loading data...")
+            </MudText>
+        </MudPaper>
+    </MudOverlay>
+}
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid>
+        <MudItem xs="12" md="4">
+            <MudTextField T="string" Value="@search" ValueChanged="@(async v => await OnSearchChanged(v))" Label="Global Search" Placeholder="Status / Notes" Immediate="true" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+        </MudItem>
+        <MudItem xs="12" md="2">
+            <MudSelect T="int?" @bind-Value="bookIdFilter" Label="Book">
+                <MudSelectItem T="int?" Value="@((int?)null)">All Books</MudSelectItem>
+                @foreach (var book in books)
+                {
+                    <MudSelectItem T="int?" Value="@((int?)book.Id)">@book.Title</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="2">
+            <MudSelect T="int?" @bind-Value="memberIdFilter" Label="Member">
+                <MudSelectItem T="int?" Value="@((int?)null)">All Members</MudSelectItem>
+                @foreach (var member in members)
+                {
+                    <MudSelectItem T="int?" Value="@((int?)member.Id)">@member.FullName</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="2">
+            <MudSelect T="string" @bind-Value="statusFilter" Label="Status">
+                <MudSelectItem T="string" Value="@(string.Empty)">All Status</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Borrowed")">Borrowed</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Returned")">Returned</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Overdue")">Overdue</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="2">
+            <MudSelect T="bool?" @bind-Value="isReturnedFilter" Label="Returned">
+                <MudSelectItem T="bool?" Value="@((bool?)null)">All</MudSelectItem>
+                <MudSelectItem T="bool?" Value="@((bool?)true)">Returned</MudSelectItem>
+                <MudSelectItem T="bool?" Value="@((bool?)false)">Not Returned</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+    </MudGrid>
+
+    <div class="d-flex flex-wrap gap-2 mt-4">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OpenCreateAsync">Add Loan</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="SearchNowAsync">Search</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="ResetFiltersAsync">Reset</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Success" OnClick="ExportExcelAsync">Export Excel</MudButton>
+    </div>
+</MudPaper>
+
+<MudPaper Class="pa-4 mb-3">
+    <div class="d-flex flex-wrap gap-2 align-center">
+        <MudSelect T="string" @bind-Value="sortBy" Label="Sort By" Style="width:180px">
+            <MudSelectItem T="string" Value="@("LoanDate")">Loan Date</MudSelectItem>
+            <MudSelectItem T="string" Value="@("DueDate")">Due Date</MudSelectItem>
+            <MudSelectItem T="string" Value="@("Status")">Status</MudSelectItem>
+        </MudSelect>
+        <MudSelect T="bool" @bind-Value="sortDesc" Label="Sort Direction" Style="width:180px">
+            <MudSelectItem T="bool" Value="@false">Ascending</MudSelectItem>
+            <MudSelectItem T="bool" Value="@true">Descending</MudSelectItem>
+        </MudSelect>
+    </div>
+</MudPaper>
+
+<MudPaper Class="pa-2">
+    <MudTable Items="loans" Hover="true" Dense="true" Loading="isLoading">
+        <HeaderContent>
+            <MudTh>Book</MudTh>
+            <MudTh>Member</MudTh>
+            <MudTh>Loan Date</MudTh>
+            <MudTh>Due Date</MudTh>
+            <MudTh>Return Date</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh>Notes</MudTh>
+            <MudTh>Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@GetBookName(context.BookId)</MudTd>
+            <MudTd>@GetMemberName(context.MemberId)</MudTd>
+            <MudTd>@context.LoanDate.ToString("dd MMM yyyy")</MudTd>
+            <MudTd>@context.DueDate.ToString("dd MMM yyyy")</MudTd>
+            <MudTd>@(context.ReturnDate.HasValue ? context.ReturnDate.Value.ToString("dd MMM yyyy") : "-")</MudTd>
+            <MudTd>
+                @if (string.Equals(context.Status, "Returned", StringComparison.OrdinalIgnoreCase))
+                {
+                    <MudChip T="string" Color="Color.Success">Returned</MudChip>
+                }
+                else if (string.Equals(context.Status, "Overdue", StringComparison.OrdinalIgnoreCase))
+                {
+                    <MudChip T="string" Color="Color.Error">Overdue</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Color="Color.Warning">Borrowed</MudChip>
+                }
+            </MudTd>
+            <MudTd>@(string.IsNullOrWhiteSpace(context.Notes) ? "-" : context.Notes)</MudTd>
+            <MudTd>
+                <MudButton Size="Size.Small" OnClick="@(() => OpenEditAsync(context))">Edit</MudButton>
+                <MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteAsync(context.Id))">Delete</MudButton>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent><MudText Class="pa-4">No loans found.</MudText></NoRecordsContent>
+    </MudTable>
+
+    <div class="d-flex justify-space-between align-center pa-3">
+        <MudText>Total: @totalCount item(s)</MudText>
+        <div class="d-flex align-center gap-2">
+            <MudSelect T="int" @bind-Value="_pageSize" Label="Page Size" Style="width:120px">
+                <MudSelectItem T="int" Value="10">10</MudSelectItem>
+                <MudSelectItem T="int" Value="20">20</MudSelectItem>
+                <MudSelectItem T="int" Value="50">50</MudSelectItem>
+                <MudSelectItem T="int" Value="100">100</MudSelectItem>
+            </MudSelect>
+            <MudPagination Count="@(totalPages == 0 ? 1 : totalPages)" Page="@_page" PageChanged="OnPageChanged" Color="Color.Primary" Variant="Variant.Outlined" />
+        </div>
+    </div>
+</MudPaper>
+
+@code {
+    private List<LoanVm> loans = new();
+    private List<BookDto> books = new();
+    private List<MemberVm> members = new();
+    private string? search;
+    private int? bookIdFilter;
+    private int? memberIdFilter;
+    private string statusFilter = string.Empty;
+    private bool? isReturnedFilter;
+    private bool isLoading;
+    private bool isExporting;
+    private bool isLoadingMasters;
+    private bool _loaded;
+    private bool _disposed;
+    private int _page = 1;
+    private int _pageSize = 10;
+    private int totalPages = 1;
+    private long totalCount;
+    private string? sortBy = "LoanDate";
+    private bool sortDesc = true;
+    private CancellationTokenSource? _debounceCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (_loaded || _disposed) return;
+        _loaded = true;
+        await LoadMastersAsync();
+        await LoadDataAsync();
+    }
+
+    private async Task LoadMastersAsync()
+    {
+        if (_disposed) return;
+        try
+        {
+            isLoadingMasters = true;
+            var bookResult = await Api.SearchAsync<BookDto>("books", page: 1, pageSize: 500, sortBy: "Title");
+            if (_disposed) return;
+            var memberResult = await Api.SearchAsync<MemberVm>("members", page: 1, pageSize: 500, sortBy: "FullName");
+            if (_disposed) return;
+            books = bookResult.Items.ToList();
+            members = memberResult.Items.ToList();
+        }
+        finally { if (!_disposed) isLoadingMasters = false; }
+    }
+
+    private Dictionary<string, string?> BuildFilters()
+    {
+        var filters = new Dictionary<string, string?>();
+        if (bookIdFilter.HasValue) filters["BookId"] = bookIdFilter.Value.ToString();
+        if (memberIdFilter.HasValue) filters["MemberId"] = memberIdFilter.Value.ToString();
+        if (!string.IsNullOrWhiteSpace(statusFilter)) filters["Status"] = statusFilter;
+        if (isReturnedFilter.HasValue) filters[isReturnedFilter.Value ? "ReturnDate" : "ReturnDate"] = isReturnedFilter.Value ? DateTime.Today.ToString("yyyy-MM-dd") : null;
+        return filters;
+    }
+
+    private async Task LoadDataAsync()
+    {
+        if (_disposed) return;
+        try
+        {
+            isLoading = true;
+            var result = await Api.SearchAsync<LoanVm>("loans", search, _page, _pageSize, sortBy, sortDesc, BuildFilters());
+            if (_disposed) return;
+            loans = result.Items
+                .Where(x => !isReturnedFilter.HasValue || (isReturnedFilter.Value ? x.ReturnDate.HasValue : !x.ReturnDate.HasValue))
+                .ToList();
+            totalCount = isReturnedFilter.HasValue ? loans.Count : result.TotalCount;
+            totalPages = isReturnedFilter.HasValue ? 1 : result.TotalPages;
+            _page = isReturnedFilter.HasValue ? 1 : result.PageNumber;
+        }
+        finally { if (!_disposed) isLoading = false; }
+    }
+
+    private string GetBookName(int bookId) => books.FirstOrDefault(x => x.Id == bookId)?.Title ?? $"Book #{bookId}";
+    private string GetMemberName(int memberId) => members.FirstOrDefault(x => x.Id == memberId)?.FullName ?? $"Member #{memberId}";
+
+    private async Task OpenCreateAsync()
+    {
+        var parameters = new DialogParameters { { nameof(LoanForm.Model), new LoanVm { LoanDate = DateTime.Today, DueDate = DateTime.Today.AddDays(7), Status = "Borrowed" } } };
+        var dialog = await DialogService.ShowAsync<LoanForm>("Add Loan", parameters, new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (!result.Canceled) await LoadDataAsync();
+    }
+
+    private async Task OpenEditAsync(LoanVm item)
+    {
+        var dialog = await DialogService.ShowAsync<LoanForm>("Edit Loan", new DialogParameters { { nameof(LoanForm.Model), item } }, new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (!result.Canceled) await LoadDataAsync();
+    }
+
+    private async Task SearchNowAsync() { _page = 1; await LoadDataAsync(); }
+    private async Task ResetFiltersAsync() { search = null; bookIdFilter = null; memberIdFilter = null; statusFilter = string.Empty; isReturnedFilter = null; _page = 1; sortBy = "LoanDate"; sortDesc = true; await LoadDataAsync(); }
+    private async Task DeleteAsync(int id) { if (_disposed) return; isLoading = true; await Api.DeleteAsync("loans", id); if (_disposed) return; await LoadDataAsync(); }
+
+    private async Task ExportExcelAsync()
+    {
+        if (_disposed) return;
+        try
+        {
+            isExporting = true;
+            var exportRows = await Api.ExportExcelAsync("loans", new ExcelExportRequest(search, new Dictionary<string, string?> {
+                ["BookId"] = bookIdFilter?.ToString(),
+                ["MemberId"] = memberIdFilter?.ToString(),
+                ["Status"] = string.IsNullOrWhiteSpace(statusFilter) ? null : statusFilter
+            }, sortBy, sortDesc,
+            new Dictionary<string, string> {
+                ["BookId"] = "Book Id", ["MemberId"] = "Member Id", ["LoanDate"] = "Loan Date", ["DueDate"] = "Due Date", ["ReturnDate"] = "Return Date", ["Status"] = "Status", ["Notes"] = "Notes"
+            }, "Loans", $"Loans_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx"));
+            if (_disposed) return;
+            await JS.InvokeVoidAsync("downloadFileFromBytes", exportRows.FileName, Convert.ToBase64String(exportRows.Bytes), exportRows.ContentType);
+        }
+        finally { if (!_disposed) isExporting = false; }
+    }
+
+    private async Task DebounceReloadAsync()
+    {
+        if (_disposed) return;
+        _debounceCts?.Cancel();
+        _debounceCts = new CancellationTokenSource();
+        var token = _debounceCts.Token;
+        try { await Task.Delay(500, token); if (_disposed || token.IsCancellationRequested) return; _page = 1; await InvokeAsync(LoadDataAsync); } catch (TaskCanceledException) { }
+    }
+
+    private async Task OnSearchChanged(string? value) { search = value; await DebounceReloadAsync(); }
+    private async Task OnPageChanged(int page) { _page = page; await LoadDataAsync(); }
+    public void Dispose() { _disposed = true; _debounceCts?.Cancel(); _debounceCts?.Dispose(); }
+}

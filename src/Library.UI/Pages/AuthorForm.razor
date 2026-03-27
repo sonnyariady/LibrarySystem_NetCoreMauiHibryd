@@ -1,0 +1,96 @@
+@using Library.UI.Models
+@using MudBlazor
+@inject ApiClient Api
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.h6" Class="mb-4">
+            @(model.Id == 0 ? "Add Author" : "Edit Author")
+        </MudText>
+
+        @if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">
+                @errorMessage
+            </MudAlert>
+        }
+
+        <MudTextField Label="Name"
+                      @bind-Value="model.Name"
+                      Required="true"
+                      Disabled="isSaving"
+                      Class="mb-2" />
+
+        <MudTextField Label="Country"
+                      @bind-Value="model.Country"
+                      Disabled="isSaving"
+                      Class="mb-2" />
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel" Variant="Variant.Outlined" Disabled="isSaving">Cancel</MudButton>
+        <MudButton OnClick="SaveAsync" Color="Color.Primary" Disabled="isSaving">
+            @if (isSaving)
+            {
+                <MudProgressCircular Class="me-2" Size="Size.Small" Indeterminate="true" />
+            }
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialogInstance { get; set; } = default!;
+    [Parameter] public AuthorVm? Model { get; set; }
+
+    private AuthorVm model = new();
+    private bool isSaving;
+    private string? errorMessage;
+
+    protected override void OnInitialized()
+    {
+        model = Model is null
+            ? new AuthorVm()
+            : new AuthorVm
+            {
+                Id = Model.Id,
+                Name = Model.Name,
+                Country = Model.Country,
+                CreatedAt = Model.CreatedAt
+            };
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            isSaving = true;
+            errorMessage = null;
+
+            if (string.IsNullOrWhiteSpace(model.Name))
+            {
+                errorMessage = "Name is required.";
+                return;
+            }
+
+            var saved = await Api.UpsertAsync("authors", model);
+            if (saved is null)
+            {
+                errorMessage = "Failed to save author.";
+                return;
+            }
+
+            MudDialogInstance.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void Cancel() => MudDialogInstance.Cancel();
+}

@@ -1,0 +1,241 @@
+﻿@using Library.UI.Models
+@using MudBlazor
+@inject ApiClient Api
+
+<MudDialog>
+    <DialogContent>
+        @if (isLoadingMasters)
+        {
+            <div class="d-flex flex-column align-center justify-center pa-6">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                <MudText Class="mt-3">Loading master data...</MudText>
+            </div>
+        }
+        else
+        {
+            <MudText Typo="Typo.h6" Class="mb-4">
+                @(model.Id == 0 ? "Add Book" : "Edit Book")
+            </MudText>
+
+            @if (!string.IsNullOrWhiteSpace(errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">
+                    @errorMessage
+                </MudAlert>
+            }
+
+            <MudTextField Label="Title"
+                          @bind-Value="model.Title"
+                          Required="true"
+                          Disabled="isSaving"
+                          Class="mb-2" />
+
+            <MudTextField Label="ISBN"
+                          @bind-Value="model.Isbn"
+                          Disabled="isSaving"
+                          Class="mb-2" />
+
+            <MudTextField Label="Publisher"
+                          @bind-Value="model.Publisher"
+                          Disabled="isSaving"
+                          Class="mb-2" />
+
+            <MudNumericField T="int"
+                             Label="Publish Year"
+                             @bind-Value="model.PublishYear"
+                             Disabled="isSaving"
+                             Class="mb-2" />
+
+            <MudSelect T="int?"
+                       Label="Author"
+                       @bind-Value="selectedAuthorId"
+                       Disabled="isSaving"
+                       Class="mb-2">
+                <MudSelectItem T="int?" Value="@((int?)null)">-- Select Author --</MudSelectItem>
+                @foreach (var author in authors)
+                {
+                    <MudSelectItem T="int?" Value="@((int?)author.Id)">
+                        @author.Name
+                    </MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect T="int?"
+                       Label="Category"
+                       @bind-Value="selectedCategoryId"
+                       Disabled="isSaving"
+                       Class="mb-2">
+                <MudSelectItem T="int?" Value="@((int?)null)">-- Select Category --</MudSelectItem>
+                @foreach (var category in categories)
+                {
+                    <MudSelectItem T="int?" Value="@((int?)category.Id)">
+                        @category.Name
+                    </MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudNumericField T="int"
+                             Label="Stock"
+                             @bind-Value="model.Stock"
+                             Disabled="isSaving"
+                             Class="mb-2" />
+
+            <MudSwitch T="bool"
+                       Label="Available"
+                       @bind-Value="model.IsAvailable"
+                       Disabled="isSaving"
+                       Class="mb-2" />
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel" Variant="Variant.Outlined" Disabled="isSaving">
+            Cancel
+        </MudButton>
+
+        <MudButton OnClick="SaveAsync" Color="Color.Primary" Disabled="isSaving || isLoadingMasters">
+            @if (isSaving)
+            {
+                <MudProgressCircular Class="me-2" Size="Size.Small" Indeterminate="true" />
+            }
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialogInstance { get; set; } = default!;
+
+    [Parameter] public BookDto? Model { get; set; }
+
+    private BookDto model = new();
+    private List<AuthorVm> authors = new();
+    private List<CategoryVm> categories = new();
+
+    private int? selectedAuthorId;
+    private int? selectedCategoryId;
+
+    private bool isSaving;
+    private bool isLoadingMasters;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        model = Model is null
+            ? new BookDto
+            {
+                PublishYear = DateTime.Now.Year,
+                Stock = 1,
+                IsAvailable = true
+            }
+            : new BookDto
+            {
+                Id = Model.Id,
+                Title = Model.Title,
+                Isbn = Model.Isbn,
+                Publisher = Model.Publisher,
+                PublishYear = Model.PublishYear,
+                AuthorId = Model.AuthorId,
+                CategoryId = Model.CategoryId,
+                Stock = Model.Stock,
+                IsAvailable = Model.IsAvailable,
+                CreatedAt = Model.CreatedAt
+            };
+
+        await LoadMastersAsync();
+
+        selectedAuthorId = model.AuthorId == 0 ? null : model.AuthorId;
+        selectedCategoryId = model.CategoryId == 0 ? null : model.CategoryId;
+    }
+
+    private async Task LoadMastersAsync()
+    {
+        try
+        {
+            isLoadingMasters = true;
+            errorMessage = null;
+
+            var authorResult = await Api.SearchAsync<AuthorVm>(
+                "authors",
+                q: null,
+                page: 1,
+                pageSize: 500,
+                sortBy: "Name",
+                sortDesc: false,
+                filters: null);
+
+            var categoryResult = await Api.SearchAsync<CategoryVm>(
+                "categories",
+                q: null,
+                page: 1,
+                pageSize: 500,
+                sortBy: "Name",
+                sortDesc: false,
+                filters: null);
+
+            authors = authorResult.Items.ToList();
+            categories = categoryResult.Items.ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoadingMasters = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            isSaving = true;
+            errorMessage = null;
+
+            model.AuthorId = selectedAuthorId ?? 0;
+            model.CategoryId = selectedCategoryId ?? 0;
+
+            if (string.IsNullOrWhiteSpace(model.Title))
+            {
+                errorMessage = "Title is required.";
+                return;
+            }
+
+            if (model.AuthorId == 0)
+            {
+                errorMessage = "Please select an author.";
+                return;
+            }
+
+            if (model.CategoryId == 0)
+            {
+                errorMessage = "Please select a category.";
+                return;
+            }
+
+            var saved = await Api.UpsertAsync("books", model);
+
+            if (saved is null)
+            {
+                errorMessage = "Failed to save book.";
+                return;
+            }
+
+            MudDialogInstance.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void Cancel()
+    {
+        MudDialogInstance.Cancel();
+    }
+}

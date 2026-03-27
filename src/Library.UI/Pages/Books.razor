@@ -1,0 +1,549 @@
+@page "/books"
+@using Library.UI.Models
+@using Microsoft.JSInterop
+@implements IDisposable
+@inject ApiClient Api
+@inject IJSRuntime JS
+@inject MudBlazor.IDialogService DialogService
+
+<MudText Typo="Typo.h4" Class="mb-3">Books</MudText>
+
+@if (isLoading || isExporting || isLoadingMasters)
+{
+    <MudOverlay Visible="true" DarkBackground="true" AutoClose="false" ZIndex="2000">
+        <MudPaper Class="pa-6 d-flex flex-column align-center justify-center">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+            <MudText Class="mt-3">
+                @(isExporting ? "Exporting Excel..."
+                            : isLoadingMasters ? "Loading master data..."
+                            : "Loading data...")
+        </MudText>
+    </MudPaper>
+</MudOverlay>
+}
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid>
+        <MudItem xs="12" md="4">
+            <MudTextField T="string"
+                          Value="@search"
+                          ValueChanged="@(async v => await OnSearchChanged(v))"
+                          Label="Global Search"
+                          Placeholder="Title / ISBN / Publisher"
+                          Immediate="true"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search" />
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudTextField T="string"
+                          Value="@titleFilter"
+                          ValueChanged="@(async v => await OnTitleFilterChanged(v))"
+                          Label="Title Filter"
+                          Placeholder="Contains title"
+                          Immediate="true" />
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudTextField T="string"
+                          Value="@isbnFilter"
+                          ValueChanged="@(async v => await OnIsbnFilterChanged(v))"
+                          Label="ISBN Filter"
+                          Placeholder="Contains ISBN"
+                          Immediate="true" />
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudTextField T="string"
+                          Value="@publisherFilter"
+                          ValueChanged="@(async v => await OnPublisherFilterChanged(v))"
+                          Label="Publisher Filter"
+                          Placeholder="Contains publisher"
+                          Immediate="true" />
+        </MudItem>
+
+        <MudItem xs="12" md="2">
+            <MudNumericField T="int?"
+                             @bind-Value="publishYearFilter"
+                             Label="Year" />
+        </MudItem>
+
+        <MudItem xs="12" md="3">
+            <MudSelect T="int?"
+                       @bind-Value="authorIdFilter"
+                       Label="Author">
+                <MudSelectItem T="int?" Value="@((int?)null)">All Authors</MudSelectItem>
+                @foreach (var author in authors)
+                {
+                    <MudSelectItem T="int?" Value="@((int?)author.Id)">
+                        @author.Name
+                    </MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="12" md="3">
+            <MudSelect T="int?"
+                       @bind-Value="categoryIdFilter"
+                       Label="Category">
+                <MudSelectItem T="int?" Value="@((int?)null)">All Categories</MudSelectItem>
+                @foreach (var category in categories)
+                {
+                    <MudSelectItem T="int?" Value="@((int?)category.Id)">
+                        @category.Name
+                    </MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="12" md="2">
+            <MudNumericField T="int?"
+                             @bind-Value="stockFilter"
+                             Label="Stock" />
+        </MudItem>
+
+        <MudItem xs="12" md="2">
+            <MudSelect T="bool?"
+                       @bind-Value="isAvailableFilter"
+                       Label="Available">
+                <MudSelectItem T="bool?" Value="@((bool?)null)">All</MudSelectItem>
+                <MudSelectItem T="bool?" Value="@((bool?)true)">Available</MudSelectItem>
+                <MudSelectItem T="bool?" Value="@((bool?)false)">Borrowed</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+    </MudGrid>
+
+    <div class="d-flex flex-wrap gap-2 mt-4">
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   OnClick="OpenCreateAsync">
+            Add Book
+        </MudButton>
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Secondary"
+                   OnClick="SearchNowAsync">
+            Search
+        </MudButton>
+
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Default"
+                   OnClick="ResetFiltersAsync">
+            Reset
+        </MudButton>
+
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Success"
+                   OnClick="ExportExcelAsync">
+            Export Excel
+        </MudButton>
+    </div>
+</MudPaper>
+
+<MudPaper Class="pa-4 mb-3">
+    <div class="d-flex flex-wrap gap-2 align-center">
+        <MudSelect T="string"
+                   @bind-Value="sortBy"
+                   Label="Sort By"
+                   Style="width:180px">
+            <MudSelectItem T="string" Value="@("Title")">Title</MudSelectItem>
+            <MudSelectItem T="string" Value="@("PublishYear")">Year</MudSelectItem>
+            <MudSelectItem T="string" Value="@("Stock")">Stock</MudSelectItem>
+            <MudSelectItem T="string" Value="@("CreatedAt")">Created At</MudSelectItem>
+        </MudSelect>
+
+        <MudSelect T="bool"
+                   @bind-Value="sortDesc"
+                   Label="Sort Direction"
+                   Style="width:180px">
+            <MudSelectItem T="bool" Value="@false">Ascending</MudSelectItem>
+            <MudSelectItem T="bool" Value="@true">Descending</MudSelectItem>
+        </MudSelect>
+    </div>
+</MudPaper>
+
+<MudPaper Class="pa-2">
+    <MudTable Items="books" Hover="true" Dense="true" Loading="isLoading">
+        <HeaderContent>
+            <MudTh>Title</MudTh>
+            <MudTh>ISBN</MudTh>
+            <MudTh>Publisher</MudTh>
+            <MudTh>Year</MudTh>
+            <MudTh>Author</MudTh>
+            <MudTh>Category</MudTh>
+            <MudTh>Stock</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh>Actions</MudTh>
+        </HeaderContent>
+
+        <RowTemplate>
+            <MudTd>@context.Title</MudTd>
+            <MudTd>@context.Isbn</MudTd>
+            <MudTd>@context.Publisher</MudTd>
+            <MudTd>@context.PublishYear</MudTd>
+            <MudTd>@GetAuthorName(context.AuthorId)</MudTd>
+            <MudTd>@GetCategoryName(context.CategoryId)</MudTd>
+            <MudTd>@context.Stock</MudTd>
+            <MudTd>
+                @if (context.IsAvailable)
+                {
+                    <MudChip T="bool" Color="Color.Success">Available</MudChip>
+                }
+                else
+                {
+                    <MudChip T="bool" Color="Color.Error">Borrowed</MudChip>
+                }
+            </MudTd>
+            <MudTd>
+                <MudButton Size="Size.Small" OnClick="@(() => OpenEditAsync(context))">Edit</MudButton>
+                <MudButton Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteAsync(context.Id))">Delete</MudButton>
+            </MudTd>
+        </RowTemplate>
+
+        <NoRecordsContent>
+            <MudText Class="pa-4">No books found.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+
+    <div class="d-flex justify-space-between align-center pa-3">
+        <MudText>Total: @totalCount item(s)</MudText>
+
+        <div class="d-flex align-center gap-2">
+            <MudSelect T="int"
+                       @bind-Value="_pageSize"
+                       Label="Page Size"
+                       Style="width:120px">
+                <MudSelectItem T="int" Value="10">10</MudSelectItem>
+                <MudSelectItem T="int" Value="20">20</MudSelectItem>
+                <MudSelectItem T="int" Value="50">50</MudSelectItem>
+                <MudSelectItem T="int" Value="100">100</MudSelectItem>
+            </MudSelect>
+
+            <MudPagination Count="@(totalPages == 0 ? 1 : totalPages)"
+                           Page="@_page"
+                           PageChanged="OnPageChanged"
+                           Color="Color.Primary"
+                           Variant="Variant.Outlined" />
+        </div>
+    </div>
+</MudPaper>
+
+@code {
+    private List<BookDto> books = new();
+    private List<AuthorVm> authors = new();
+    private List<CategoryVm> categories = new();
+
+    private string? search;
+    private string? titleFilter;
+    private string? isbnFilter;
+    private string? publisherFilter;
+    private int? publishYearFilter;
+    private int? authorIdFilter;
+    private int? categoryIdFilter;
+    private int? stockFilter;
+    private bool? isAvailableFilter;
+
+    private bool isLoading;
+    private bool isExporting;
+    private bool isLoadingMasters;
+    private bool _loaded;
+    private bool _disposed;
+
+    private int _page = 1;
+    private int _pageSize = 10;
+    private int totalPages = 1;
+    private long totalCount = 0;
+
+    private string? sortBy = "Title";
+    private bool sortDesc = false;
+
+    private CancellationTokenSource? _debounceCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (_loaded || _disposed)
+            return;
+
+        _loaded = true;
+        await LoadMastersAsync();
+        await LoadDataAsync();
+    }
+
+    private async Task LoadMastersAsync()
+    {
+        if (_disposed) return;
+
+        try
+        {
+            isLoadingMasters = true;
+
+            var authorResult = await Api.SearchAsync<AuthorVm>("authors", page: 1, pageSize: 500, sortBy: "Name");
+            if (_disposed) return;
+
+            var categoryResult = await Api.SearchAsync<CategoryVm>("categories", page: 1, pageSize: 500, sortBy: "Name");
+            if (_disposed) return;
+
+            authors = authorResult.Items.ToList();
+            categories = categoryResult.Items.ToList();
+        }
+        finally
+        {
+            if (!_disposed)
+                isLoadingMasters = false;
+        }
+    }
+
+    private string GetAuthorName(int authorId)
+        => authors.FirstOrDefault(x => x.Id == authorId)?.Name ?? "-";
+
+    private string GetCategoryName(int categoryId)
+        => categories.FirstOrDefault(x => x.Id == categoryId)?.Name ?? "-";
+
+    private Dictionary<string, string?> BuildFilters()
+    {
+        var filters = new Dictionary<string, string?>();
+
+        if (!string.IsNullOrWhiteSpace(titleFilter))
+            filters["Title"] = titleFilter;
+        if (!string.IsNullOrWhiteSpace(isbnFilter))
+            filters["Isbn"] = isbnFilter;
+        if (!string.IsNullOrWhiteSpace(publisherFilter))
+            filters["Publisher"] = publisherFilter;
+        if (publishYearFilter.HasValue)
+            filters["PublishYear"] = publishYearFilter.Value.ToString();
+        if (authorIdFilter.HasValue)
+            filters["AuthorId"] = authorIdFilter.Value.ToString();
+        if (categoryIdFilter.HasValue)
+            filters["CategoryId"] = categoryIdFilter.Value.ToString();
+        if (stockFilter.HasValue)
+            filters["Stock"] = stockFilter.Value.ToString();
+        if (isAvailableFilter.HasValue)
+            filters["IsAvailable"] = isAvailableFilter.Value.ToString();
+
+        return filters;
+    }
+
+    private async Task LoadDataAsync()
+    {
+        if (_disposed) return;
+
+        try
+        {
+            isLoading = true;
+
+            var result = await Api.SearchAsync<BookDto>(
+                "books",
+                q: search,
+                page: _page,
+                pageSize: _pageSize,
+                sortBy: sortBy,
+                sortDesc: sortDesc,
+                filters: BuildFilters());
+
+            if (_disposed) return;
+
+            books = result.Items.ToList();
+            totalCount = result.TotalCount;
+            totalPages = result.TotalPages;
+            _page = result.PageNumber;
+        }
+        finally
+        {
+            if (!_disposed)
+                isLoading = false;
+        }
+    }
+
+    private async Task OpenCreateAsync()
+    {
+        var parameters = new DialogParameters
+        {
+            { nameof(BookForm.Model), new BookDto
+                {
+                    PublishYear = DateTime.Now.Year,
+                    Stock = 1,
+                    IsAvailable = true
+                }
+            }
+        };
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<BookForm>("Add Book", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+            await LoadDataAsync();
+    }
+
+    private async Task OpenEditAsync(BookDto item)
+    {
+        var parameters = new DialogParameters
+        {
+            { nameof(BookForm.Model), item }
+        };
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<BookForm>("Edit Book", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+            await LoadDataAsync();
+    }
+
+    private async Task SearchNowAsync()
+    {
+        if (_disposed) return;
+        _page = 1;
+        await LoadDataAsync();
+    }
+
+    private async Task ResetFiltersAsync()
+    {
+        if (_disposed) return;
+
+        search = null;
+        titleFilter = null;
+        isbnFilter = null;
+        publisherFilter = null;
+        publishYearFilter = null;
+        authorIdFilter = null;
+        categoryIdFilter = null;
+        stockFilter = null;
+        isAvailableFilter = null;
+        _page = 1;
+        sortBy = "Title";
+        sortDesc = false;
+
+        await LoadDataAsync();
+    }
+
+    private async Task DeleteAsync(int id)
+    {
+        if (_disposed) return;
+
+        isLoading = true;
+        await Api.DeleteAsync("books", id);
+
+        if (_disposed) return;
+        await LoadDataAsync();
+    }
+
+    private async Task ExportExcelAsync()
+    {
+        if (_disposed) return;
+
+        try
+        {
+            isExporting = true;
+
+            var exportRequest = new ExcelExportRequest(
+                Q: search,
+                Filters: BuildFilters(),
+                SortBy: sortBy,
+                SortDesc: sortDesc,
+                HeaderMap: new Dictionary<string, string>
+                {
+                    ["Title"] = "Title",
+                    ["Isbn"] = "ISBN",
+                    ["Publisher"] = "Publisher",
+                    ["PublishYear"] = "Year",
+                    ["AuthorId"] = "Author Id",
+                    ["CategoryId"] = "Category Id",
+                    ["Stock"] = "Stock",
+                    ["IsAvailable"] = "Available",
+                    ["CreatedAt"] = "Created At"
+                },
+                SheetName: "Books",
+                FileName: $"Books_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx"
+            );
+
+            var file = await Api.ExportExcelAsync("books", exportRequest);
+
+            if (_disposed) return;
+
+            await JS.InvokeVoidAsync(
+                "downloadFileFromBytes",
+                file.FileName,
+                Convert.ToBase64String(file.Bytes),
+                file.ContentType);
+        }
+        finally
+        {
+            if (!_disposed)
+                isExporting = false;
+        }
+    }
+
+    private async Task DebounceReloadAsync()
+    {
+        if (_disposed) return;
+
+        _debounceCts?.Cancel();
+        _debounceCts = new CancellationTokenSource();
+        var token = _debounceCts.Token;
+
+        try
+        {
+            await Task.Delay(500, token);
+
+            if (_disposed || token.IsCancellationRequested)
+                return;
+
+            _page = 1;
+            await InvokeAsync(LoadDataAsync);
+        }
+        catch (TaskCanceledException)
+        {
+        }
+    }
+
+    private async Task OnSearchChanged(string? value)
+    {
+        search = value;
+        await DebounceReloadAsync();
+    }
+
+    private async Task OnTitleFilterChanged(string? value)
+    {
+        titleFilter = value;
+        await DebounceReloadAsync();
+    }
+
+    private async Task OnIsbnFilterChanged(string? value)
+    {
+        isbnFilter = value;
+        await DebounceReloadAsync();
+    }
+
+    private async Task OnPublisherFilterChanged(string? value)
+    {
+        publisherFilter = value;
+        await DebounceReloadAsync();
+    }
+
+    private async Task OnPageChanged(int newPage)
+    {
+        if (_disposed) return;
+        _page = newPage;
+        await LoadDataAsync();
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _debounceCts?.Cancel();
+        _debounceCts = null;
+    }
+}
