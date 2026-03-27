@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MudBlazor.Services;
+using System.Net.Http;
 
 namespace Library.App;
 
@@ -40,46 +41,53 @@ public static class MauiProgram
         builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
 #endif
 
+#if ANDROID && DEBUG
         builder.Services.AddHttpClient<ApiClient>(client =>
         {
             var apiBase = builder.Configuration["ApiSettings:BaseUrl"] ?? "https://localhost:65090/";
             var localhostReplace = builder.Configuration["ApiSettings:LocalhostReplace"];
-            var androidHttpPort = builder.Configuration["ApiSettings:AndroidHttpPort"];
+
+            localhostReplace = string.IsNullOrWhiteSpace(localhostReplace)
+                ? "10.0.2.2"
+                : localhostReplace;
+
+            if (apiBase.Contains("localhost", StringComparison.OrdinalIgnoreCase))
+            {
+                apiBase = apiBase.Replace("localhost", localhostReplace, StringComparison.OrdinalIgnoreCase);
+            }
+
+            System.Diagnostics.Debug.WriteLine($"Api BaseAddress = {apiBase}");
+            client.BaseAddress = new Uri(apiBase);
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true
+        });
+#else
+        builder.Services.AddHttpClient<ApiClient>(client =>
+        {
+            var apiBase = builder.Configuration["ApiSettings:BaseUrl"] ?? "https://localhost:65090/";
+            var localhostReplace = builder.Configuration["ApiSettings:LocalhostReplace"];
 
 #if ANDROID
             localhostReplace = string.IsNullOrWhiteSpace(localhostReplace)
                 ? "10.0.2.2"
                 : localhostReplace;
-
-            androidHttpPort = string.IsNullOrWhiteSpace(androidHttpPort)
-                ? "65091"
-                : androidHttpPort;
-#endif
-
-#if WINDOWS
-    localhostReplace = string.IsNullOrWhiteSpace(localhostReplace)
-        ? "localhost"
-        : localhostReplace;
+#else
+            localhostReplace = string.IsNullOrWhiteSpace(localhostReplace)
+                ? "localhost"
+                : localhostReplace;
 #endif
 
             if (apiBase.Contains("localhost", StringComparison.OrdinalIgnoreCase))
             {
-                apiBase = apiBase.Replace("localhost", localhostReplace!, StringComparison.OrdinalIgnoreCase);
+                apiBase = apiBase.Replace("localhost", localhostReplace, StringComparison.OrdinalIgnoreCase);
             }
-
-#if ANDROID
-            var uri = new Uri(apiBase);
-            var builderUri = new UriBuilder(uri)
-            {
-                Scheme = Uri.UriSchemeHttp,
-                Port = int.Parse(androidHttpPort!)
-            };
-            apiBase = builderUri.Uri.ToString();
-#endif
 
             System.Diagnostics.Debug.WriteLine($"Api BaseAddress = {apiBase}");
             client.BaseAddress = new Uri(apiBase);
         });
+#endif
 
         return builder.Build();
     }
