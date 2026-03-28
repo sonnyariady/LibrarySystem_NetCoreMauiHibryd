@@ -42,7 +42,6 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseCors("Open");
-app.UseHttpsRedirection();
 app.MapControllers();
 
 using (var scope = app.Services.CreateScope())

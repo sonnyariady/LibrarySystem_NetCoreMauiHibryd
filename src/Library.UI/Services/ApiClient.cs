@@ -41,10 +41,12 @@ public class ApiClient
         }
         catch (OperationCanceledException exx)
         {
+            throw new Exception($"URL: {_http!.BaseAddress!.AbsoluteUri} {exx.Message}");
             return new PagedResultGeneral<T>(Array.Empty<T>(), 0, page, pageSize, 0);
         }
         catch (Exception ex)
         {
+            throw new Exception($"URL: {_http!.BaseAddress!.AbsoluteUri} {ex.Message}");
             return new PagedResultGeneral<T>(Array.Empty<T>(), 0, page, pageSize, 0);
         }
     }

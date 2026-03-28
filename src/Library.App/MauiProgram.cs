@@ -1,4 +1,4 @@
-using Library.UI.Services;
+﻿using Library.UI.Services;
 using Microsoft.AspNetCore.Components.WebView.Maui;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,23 +41,22 @@ public static class MauiProgram
         builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
 #endif
 
-#if ANDROID && DEBUG
+#if ANDROID
+        var useEmulator = bool.TryParse(
+            builder.Configuration["ApiSettings:AndroidUseEmulator"],
+            out var emulatorFlag) && emulatorFlag;
+
+        var baseUrl = useEmulator
+            ? builder.Configuration["ApiSettings:AndroidEmulatorBaseUrl"] ?? "https://10.0.2.2:65090/"
+            : builder.Configuration["ApiSettings:AndroidDeviceBaseUrl"] ?? "http://192.168.100.63:65091/";
+
+        System.Diagnostics.Debug.WriteLine($"[ANDROID] Emulator: {useEmulator}");
+        System.Diagnostics.Debug.WriteLine($"[ANDROID] API: {baseUrl}");
+
+#if DEBUG
         builder.Services.AddHttpClient<ApiClient>(client =>
         {
-            var apiBase = builder.Configuration["ApiSettings:BaseUrl"] ?? "https://localhost:65090/";
-            var localhostReplace = builder.Configuration["ApiSettings:LocalhostReplace"];
-
-            localhostReplace = string.IsNullOrWhiteSpace(localhostReplace)
-                ? "10.0.2.2"
-                : localhostReplace;
-
-            if (apiBase.Contains("localhost", StringComparison.OrdinalIgnoreCase))
-            {
-                apiBase = apiBase.Replace("localhost", localhostReplace, StringComparison.OrdinalIgnoreCase);
-            }
-
-            System.Diagnostics.Debug.WriteLine($"Api BaseAddress = {apiBase}");
-            client.BaseAddress = new Uri(apiBase);
+            client.BaseAddress = new Uri(baseUrl);
         })
         .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
         {
@@ -66,26 +65,28 @@ public static class MauiProgram
 #else
         builder.Services.AddHttpClient<ApiClient>(client =>
         {
-            var apiBase = builder.Configuration["ApiSettings:BaseUrl"] ?? "https://localhost:65090/";
-            var localhostReplace = builder.Configuration["ApiSettings:LocalhostReplace"];
-
-#if ANDROID
-            localhostReplace = string.IsNullOrWhiteSpace(localhostReplace)
-                ? "10.0.2.2"
-                : localhostReplace;
-#else
-            localhostReplace = string.IsNullOrWhiteSpace(localhostReplace)
-                ? "localhost"
-                : localhostReplace;
+            client.BaseAddress = new Uri(baseUrl);
+        });
 #endif
 
-            if (apiBase.Contains("localhost", StringComparison.OrdinalIgnoreCase))
-            {
-                apiBase = apiBase.Replace("localhost", localhostReplace, StringComparison.OrdinalIgnoreCase);
-            }
+#elif WINDOWS
+        var windowsUrl = builder.Configuration["ApiSettings:WindowsBaseUrl"]
+                         ?? "https://localhost:65090/";
 
-            System.Diagnostics.Debug.WriteLine($"Api BaseAddress = {apiBase}");
-            client.BaseAddress = new Uri(apiBase);
+        System.Diagnostics.Debug.WriteLine($"[WINDOWS] API: {windowsUrl}");
+
+        builder.Services.AddHttpClient<ApiClient>(client =>
+        {
+            client.BaseAddress = new Uri(windowsUrl);
+        });
+
+#else
+        var defaultUrl = builder.Configuration["ApiSettings:WindowsBaseUrl"]
+                         ?? "https://localhost:65090/";
+
+        builder.Services.AddHttpClient<ApiClient>(client =>
+        {
+            client.BaseAddress = new Uri(defaultUrl);
         });
 #endif
 

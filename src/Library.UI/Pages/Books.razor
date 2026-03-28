@@ -5,6 +5,7 @@
 @inject ApiClient Api
 @inject IJSRuntime JS
 @inject MudBlazor.IDialogService DialogService
+@inject ISnackbar Snackbar
 
 <MudText Typo="Typo.h4" Class="mb-3">Books</MudText>
 
@@ -286,6 +287,10 @@
             authors = authorResult.Items.ToList();
             categories = categoryResult.Items.ToList();
         }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message} {ex.StackTrace}", Severity.Error);
+        }
         finally
         {
             if (!_disposed)
@@ -346,6 +351,10 @@
             totalCount = result.TotalCount;
             totalPages = result.TotalPages;
             _page = result.PageNumber;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message} {ex.StackTrace}", Severity.Error);
         }
         finally
         {
